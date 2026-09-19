@@ -94,7 +94,7 @@ EvictPolicy  yue2_store_policy(const ModelStore * s);
 Qwen3LM *    yue2_store_require_lm(ModelStore * s, const ModelKey & k);
 Yue2NAR *    yue2_store_require_nar(ModelStore * s, const ModelKey & k);
 VAEGGML *    yue2_store_require_vae(ModelStore * s, const ModelKey & k);
-SheetSage2 * store_require_ss2(ModelStore * s, const ModelKey & k);
+SheetSage2 * yue2_store_require_ss2(ModelStore * s, const ModelKey & k);
 
 // Release decrements the refcount for the module behind this handle.
 // Pass exactly the pointer returned by require. After release, the pointer

@@ -187,7 +187,7 @@ static VAEGGML * require_vae(Yue2Pipeline * p) {
 
 static SheetSage2 * require_ss2(Yue2Pipeline * p) {
     ModelKey     k = { MODEL_SS2, p->transcriber_path };
-    SheetSage2 * m = store_require_ss2(p->store, k);
+    SheetSage2 * m = yue2_store_require_ss2(p->store, k);
     if (m) {
         m->use_flash_attn = m->use_flash_attn && !p->params.no_fa;
     }

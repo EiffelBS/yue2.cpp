@@ -263,7 +263,7 @@ VAEGGML * yue2_store_require_vae(ModelStore * s, const ModelKey & k) {
     return m;
 }
 
-SheetSage2 * store_require_ss2(ModelStore * s, const ModelKey & k) {
+SheetSage2 * yue2_store_require_ss2(ModelStore * s, const ModelKey & k) {
     if (auto * hit = cache_hit<SheetSage2>(s, k)) {
         return hit;
     }
