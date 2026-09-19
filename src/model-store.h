@@ -80,9 +80,9 @@ enum EvictPolicy {
     EVICT_NEVER,   // --keep-loaded: never evict, accumulate
 };
 
-ModelStore * store_create(EvictPolicy policy);
-void         store_free(ModelStore * s);
-EvictPolicy  store_policy(const ModelStore * s);
+ModelStore * yue2_store_create(EvictPolicy policy);
+void         yue2_store_free(ModelStore * s);
+EvictPolicy  yue2_store_policy(const ModelStore * s);
 
 // Typed GPU module accessors. Each returns a pointer owned by the store;
 // never free it yourself. Returns NULL on load failure.
@@ -91,27 +91,27 @@ EvictPolicy  store_policy(const ModelStore * s);
 // matching release. In EVICT_STRICT, require evicts every module outside
 // its coexistence group whose refcount is zero; if any conflicting module
 // has refcount > 0 the store aborts (a programming error in the caller).
-Qwen3LM *    store_require_lm(ModelStore * s, const ModelKey & k);
-Yue2NAR *    store_require_nar(ModelStore * s, const ModelKey & k);
-VAEGGML *    store_require_vae(ModelStore * s, const ModelKey & k);
+Qwen3LM *    yue2_store_require_lm(ModelStore * s, const ModelKey & k);
+Yue2NAR *    yue2_store_require_nar(ModelStore * s, const ModelKey & k);
+VAEGGML *    yue2_store_require_vae(ModelStore * s, const ModelKey & k);
 SheetSage2 * store_require_ss2(ModelStore * s, const ModelKey & k);
 
 // Release decrements the refcount for the module behind this handle.
 // Pass exactly the pointer returned by require. After release, the pointer
 // must not be used: in EVICT_STRICT it may be unloaded immediately.
-void store_release(ModelStore * s, void * handle);
+void yue2_store_release(ModelStore * s, void * handle);
 
 // CPU-resident accessor. Loaded on first call, kept forever, never
 // evicted: the tokenizer travels with the backbone GGUF metadata (a few
 // MB). Returns NULL on load failure.
-BPETokenizer * store_bpe(ModelStore * s, const char * lm_path);
+BPETokenizer * yue2_store_bpe(ModelStore * s, const char * lm_path);
 
 // Observability: sum of currently resident GPU module weight buffers, and
 // the count of loaded GPU modules.
-size_t store_vram_bytes(const ModelStore * s);
-int    store_gpu_module_count(const ModelStore * s);
+size_t yue2_store_vram_bytes(const ModelStore * s);
+int    yue2_store_gpu_module_count(const ModelStore * s);
 
-// RAII helper. Builds on top of store_release, nothing else.
+// RAII helper. Builds on top of yue2_store_release, nothing else.
 struct ModelHandle {
     ModelStore * store;
     void *       ptr;
@@ -120,7 +120,7 @@ struct ModelHandle {
 
     ~ModelHandle() {
         if (store && ptr) {
-            store_release(store, ptr);
+            yue2_store_release(store, ptr);
         }
     }
 

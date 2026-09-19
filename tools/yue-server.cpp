@@ -442,7 +442,7 @@ static std::string json_string(const char * key, const std::string & value) {
 
 static void handle_props(const httplib::Request &, httplib::Response & res) {
     Yue2Request d;
-    request_init(&d);
+    yue2_request_init(&d);
 
     yyjson_mut_doc * doc  = yyjson_mut_doc_new(NULL);
     yyjson_mut_val * root = yyjson_mut_obj(doc);
@@ -456,7 +456,7 @@ static void handle_props(const httplib::Request &, httplib::Response & res) {
 
     // The defaults are the request schema itself, serialized by the request
     // writer and grafted here: one source of truth, one float formatting
-    std::string  def_json = request_to_json(&d, false);
+    std::string  def_json = yue2_request_to_json(&d, false);
     yyjson_doc * def_doc  = yyjson_read(def_json.c_str(), def_json.size(), 0);
     if (def_doc) {
         yyjson_mut_obj_add_val(doc, root, "defaults", yyjson_val_mut_copy(doc, yyjson_doc_get_root(def_doc)));
@@ -474,7 +474,7 @@ static void handle_props(const httplib::Request &, httplib::Response & res) {
 // Validates what the pipeline would refuse anyway, so a bad request fails
 // fast with a 400 instead of occupying the worker
 static bool validate(const httplib::Request & req, httplib::Response & res, Yue2Request * r) {
-    if (!request_parse_json(r, req.body.c_str())) {
+    if (!yue2_request_parse_json(r, req.body.c_str())) {
         res.status = 400;
         res.set_content(json_string("error", "invalid JSON"), "application/json");
         return false;
@@ -512,7 +512,7 @@ static bool validate(const httplib::Request & req, httplib::Response & res, Yue2
         res.set_content(json_string("error", "sampling preset outside the protocol bounds"), "application/json");
         return false;
     }
-    request_resolve_seed(r);
+    yue2_request_resolve_seed(r);
     return true;
 }
 
@@ -537,7 +537,7 @@ static void run_transcribe(std::shared_ptr<Job> job, std::vector<float> audio, b
 
 static void run_job(std::shared_ptr<Job> job, Yue2Request request) {
     active_job_set(job);
-    fprintf(stderr, "[Server] Job %s: %s\n", job->id.c_str(), request_to_json(&request).c_str());
+    fprintf(stderr, "[Server] Job %s: %s\n", job->id.c_str(), yue2_request_to_json(&request).c_str());
 
     std::vector<Yue2Song> songs;
     bool ok = pipeline_generate(&g_pipeline, request, &songs, server_cancel_job, (void *) &job->cancel);
@@ -572,9 +572,9 @@ static void run_job(std::shared_ptr<Job> job, Yue2Request request) {
             job->status.store(JobStatus::FAILED);
             return;
         }
-        Yue2Request replay = request_replay(request, song.score.empty() ? request.abc : song.score,
+        Yue2Request replay = yue2_request_replay(request, song.score.empty() ? request.abc : song.score,
                                             pipeline_format_tokens(song.tokens), (int) t / M, (int) t % M);
-        request_parts.push_back(request_to_json(&replay));
+        request_parts.push_back(yue2_request_to_json(&replay));
     }
 
     active_job_set(nullptr);
@@ -663,10 +663,10 @@ int main(int argc, char ** argv) {
     // Model loads go through the store: STRICT by default (one half of the
     // backbone resident at a time, the cache staying between them), NEVER
     // with --keep-loaded (everything accumulates)
-    g_pipeline.store            = store_create(g_keep_loaded ? EVICT_NEVER : EVICT_STRICT);
+    g_pipeline.store            = yue2_store_create(g_keep_loaded ? EVICT_NEVER : EVICT_STRICT);
     g_pipeline.transcriber_path = g_transcriber_path;
     if (!pipeline_configure(&g_pipeline, g_model_path.c_str(), g_vae_path.c_str(), params)) {
-        store_free(g_pipeline.store);
+        yue2_store_free(g_pipeline.store);
         return 1;
     }
 
@@ -796,7 +796,7 @@ int main(int argc, char ** argv) {
     cv_work.notify_all();
     worker.join();
     pipeline_free(&g_pipeline);
-    store_free(g_pipeline.store);
+    yue2_store_free(g_pipeline.store);
     fprintf(stderr, "[Server] Done\n");
     return exit_code;
 }

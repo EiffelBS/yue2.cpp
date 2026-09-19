@@ -60,7 +60,7 @@ struct GpuEntry {
     const char * label;
 };
 
-// Reverse lookup: handle pointer -> key, so store_release can find the
+// Reverse lookup: handle pointer -> key, so yue2_store_release can find the
 // entry from just the pointer without the caller carrying the key around.
 using HandleMap = std::unordered_map<void *, ModelKey>;
 
@@ -141,18 +141,18 @@ template <typename T> static T * cache_hit(ModelStore * s, const ModelKey & k) {
 
 }  // namespace
 
-ModelStore * store_create(EvictPolicy policy) {
+ModelStore * yue2_store_create(EvictPolicy policy) {
     auto * s  = new ModelStore();
     s->policy = policy;
     fprintf(stderr, "[Store] Created (policy=%s)\n", policy == EVICT_STRICT ? "STRICT" : "NEVER");
     return s;
 }
 
-EvictPolicy store_policy(const ModelStore * s) {
+EvictPolicy yue2_store_policy(const ModelStore * s) {
     return s->policy;
 }
 
-void store_free(ModelStore * s) {
+void yue2_store_free(ModelStore * s) {
     if (!s) {
         return;
     }
@@ -212,7 +212,7 @@ static size_t bytes_of_ss2(const SheetSage2 * m) {
     return m && m->wctx.buffer ? ggml_backend_buffer_get_size(m->wctx.buffer) : 0;
 }
 
-Qwen3LM * store_require_lm(ModelStore * s, const ModelKey & k) {
+Qwen3LM * yue2_store_require_lm(ModelStore * s, const ModelKey & k) {
     if (auto * hit = cache_hit<Qwen3LM>(s, k)) {
         return hit;
     }
@@ -230,7 +230,7 @@ Qwen3LM * store_require_lm(ModelStore * s, const ModelKey & k) {
     return m;
 }
 
-Yue2NAR * store_require_nar(ModelStore * s, const ModelKey & k) {
+Yue2NAR * yue2_store_require_nar(ModelStore * s, const ModelKey & k) {
     if (auto * hit = cache_hit<Yue2NAR>(s, k)) {
         return hit;
     }
@@ -248,7 +248,7 @@ Yue2NAR * store_require_nar(ModelStore * s, const ModelKey & k) {
     return m;
 }
 
-VAEGGML * store_require_vae(ModelStore * s, const ModelKey & k) {
+VAEGGML * yue2_store_require_vae(ModelStore * s, const ModelKey & k) {
     if (auto * hit = cache_hit<VAEGGML>(s, k)) {
         return hit;
     }
@@ -281,7 +281,7 @@ SheetSage2 * store_require_ss2(ModelStore * s, const ModelKey & k) {
     return m;
 }
 
-void store_release(ModelStore * s, void * handle) {
+void yue2_store_release(ModelStore * s, void * handle) {
     if (!s || !handle) {
         return;
     }
@@ -307,7 +307,7 @@ void store_release(ModelStore * s, void * handle) {
     }
 }
 
-BPETokenizer * store_bpe(ModelStore * s, const char * lm_path) {
+BPETokenizer * yue2_store_bpe(ModelStore * s, const char * lm_path) {
     std::string key = lm_path ? lm_path : "";
     auto        it  = s->bpe_by_path.find(key);
     if (it != s->bpe_by_path.end()) {
@@ -327,7 +327,7 @@ BPETokenizer * store_bpe(ModelStore * s, const char * lm_path) {
     return bpe;
 }
 
-size_t store_vram_bytes(const ModelStore * s) {
+size_t yue2_store_vram_bytes(const ModelStore * s) {
     if (!s) {
         return 0;
     }
@@ -338,7 +338,7 @@ size_t store_vram_bytes(const ModelStore * s) {
     return total;
 }
 
-int store_gpu_module_count(const ModelStore * s) {
+int yue2_store_gpu_module_count(const ModelStore * s) {
     if (!s) {
         return 0;
     }

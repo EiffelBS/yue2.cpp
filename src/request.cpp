@@ -15,7 +15,7 @@
 static const yyjson_write_flag WRITE_FLAGS =
     YYJSON_WRITE_PRETTY | YYJSON_WRITE_PRETTY_TWO_SPACES | YYJSON_WRITE_FP_TO_FLOAT;
 
-void request_init(Yue2Request * r) {
+void yue2_request_init(Yue2Request * r) {
     r->style  = "";
     r->lyrics = "";
     r->abc    = "";
@@ -112,7 +112,7 @@ static void add_sampling(yyjson_mut_doc *     doc,
     }
 }
 
-static void request_parse_obj(yyjson_val * obj, Yue2Request * r) {
+static void yue2_request_parse_obj(yyjson_val * obj, Yue2Request * r) {
     yyjson_val * v;
 
     if ((v = yyjson_obj_get(obj, "style")) && yyjson_is_str(v)) {
@@ -164,8 +164,8 @@ static void request_parse_obj(yyjson_val * obj, Yue2Request * r) {
     }
 }
 
-bool request_parse_json(Yue2Request * r, const char * json) {
-    request_init(r);
+bool yue2_request_parse_json(Yue2Request * r, const char * json) {
+    yue2_request_init(r);
     yyjson_doc * doc = yyjson_read(json, strlen(json), 0);
     if (!doc) {
         fprintf(stderr, "[Request] ERROR: malformed JSON\n");
@@ -177,13 +177,13 @@ bool request_parse_json(Yue2Request * r, const char * json) {
         yyjson_doc_free(doc);
         return false;
     }
-    request_parse_obj(root, r);
+    yue2_request_parse_obj(root, r);
     yyjson_doc_free(doc);
     return true;
 }
 
-bool request_parse(Yue2Request * r, const char * path) {
-    request_init(r);
+bool yue2_request_parse(Yue2Request * r, const char * path) {
+    yue2_request_init(r);
     yyjson_doc * doc = yyjson_read_file(path, 0, NULL, NULL);
     if (!doc) {
         fprintf(stderr, "[Request] ERROR: cannot read %s\n", path);
@@ -195,15 +195,15 @@ bool request_parse(Yue2Request * r, const char * path) {
         yyjson_doc_free(doc);
         return false;
     }
-    request_parse_obj(root, r);
+    yue2_request_parse_obj(root, r);
     yyjson_doc_free(doc);
     fprintf(stderr, "[Request] Parsed %s\n", path);
     return true;
 }
 
-std::string request_to_json(const Yue2Request * r, bool sparse) {
+std::string yue2_request_to_json(const Yue2Request * r, bool sparse) {
     Yue2Request d;
-    request_init(&d);
+    yue2_request_init(&d);
 
     yyjson_mut_doc * doc  = yyjson_mut_doc_new(NULL);
     yyjson_mut_val * root = yyjson_mut_obj(doc);
@@ -273,7 +273,7 @@ static int64_t random_seed() {
     return (int64_t) ((((hi << 32) | lo) >> 1));
 }
 
-void request_resolve_seed(Yue2Request * r) {
+void yue2_request_resolve_seed(Yue2Request * r) {
     if (r->lm_seed < 0) {
         r->lm_seed = random_seed();
     }
@@ -282,7 +282,7 @@ void request_resolve_seed(Yue2Request * r) {
     }
 }
 
-Yue2Request request_replay(const Yue2Request & base,
+Yue2Request yue2_request_replay(const Yue2Request & base,
                            const std::string & abc,
                            const std::string & tokens,
                            int                 song,

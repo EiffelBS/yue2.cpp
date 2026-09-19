@@ -72,23 +72,23 @@ struct Yue2Request {
 };
 
 // fills every field with its default
-void request_init(Yue2Request * r);
+void yue2_request_init(Yue2Request * r);
 
 // parses a JSON string, missing fields keep their default
-bool request_parse_json(Yue2Request * r, const char * json);
+bool yue2_request_parse_json(Yue2Request * r, const char * json);
 
 // parses a JSON file, missing fields keep their default
-bool request_parse(Yue2Request * r, const char * path);
+bool yue2_request_parse(Yue2Request * r, const char * path);
 
 // serializes, sparse skips the fields left at their default
-std::string request_to_json(const Yue2Request * r, bool sparse = true);
+std::string yue2_request_to_json(const Yue2Request * r, bool sparse = true);
 
 // resolves a negative seed to a random positive one
-void request_resolve_seed(Yue2Request * r);
+void yue2_request_resolve_seed(Yue2Request * r);
 
 // the request that renders one track of a batch again without the
 // autoregression: its score, its semantic stream and the two seeds it consumed
-Yue2Request request_replay(const Yue2Request & base,
+Yue2Request yue2_request_replay(const Yue2Request & base,
                            const std::string & abc,
                            const std::string & tokens,
                            int                 song,

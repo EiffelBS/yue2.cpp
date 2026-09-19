@@ -75,9 +75,9 @@ int main(int argc, char ** argv) {
     Yue2PipelineParams params;
 
     Yue2Request r;
-    request_init(&r);
+    yue2_request_init(&r);
     for (int i = 1; i + 1 < argc; i++) {
-        if (!strcmp(argv[i], "--request") && !request_parse(&r, argv[i + 1])) {
+        if (!strcmp(argv[i], "--request") && !yue2_request_parse(&r, argv[i + 1])) {
             return 1;
         }
     }
@@ -129,7 +129,7 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-    request_resolve_seed(&r);
+    yue2_request_resolve_seed(&r);
 
     bool      is_mp3  = false;
     WavFormat wav_fmt = WAV_S16;
@@ -141,23 +141,23 @@ int main(int argc, char ** argv) {
 
     // Model loads go through the store in STRICT policy: at most one half of
     // the backbone resident at a time, the cache staying between them
-    ModelStore * store = store_create(EVICT_STRICT);
+    ModelStore * store = yue2_store_create(EVICT_STRICT);
 
     Yue2Pipeline pipeline;
     pipeline.store = store;
     if (!pipeline_configure(&pipeline, model_path, vae_path, params)) {
-        store_free(store);
+        yue2_store_free(store);
         return 1;
     }
 
     std::vector<Yue2Song> songs;
     if (!pipeline_generate(&pipeline, r, &songs)) {
         pipeline_free(&pipeline);
-        store_free(store);
+        yue2_store_free(store);
         return 1;
     }
     pipeline_free(&pipeline);
-    store_free(store);
+    yue2_store_free(store);
 
     // A single track lands on the paths as given; a batch numbers each path
     // with song then variation index: song.mp3 -> song00.mp3. Every track
@@ -192,8 +192,8 @@ int main(int argc, char ** argv) {
         }
 
         Yue2Request replay =
-            request_replay(r, song.score.empty() ? r.abc : song.score, pipeline_format_tokens(song.tokens), i, j);
-        std::string json = request_to_json(&replay) + "\n";
+            yue2_request_replay(r, song.score.empty() ? r.abc : song.score, pipeline_format_tokens(song.tokens), i, j);
+        std::string json = yue2_request_to_json(&replay) + "\n";
         size_t      dot  = path.rfind('.');
         if (!write_file((dot != std::string::npos ? path.substr(0, dot) : path) + ".json", json.data(), json.size())) {
             return 1;

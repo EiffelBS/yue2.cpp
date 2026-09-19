@@ -61,9 +61,9 @@ int main(int argc, char ** argv) {
     bool         clamp_fp16 = false;
 
     Yue2Request r;
-    request_init(&r);
+    yue2_request_init(&r);
     for (int i = 1; i + 1 < argc; i++) {
-        if (!strcmp(argv[i], "--request") && !request_parse(&r, argv[i + 1])) {
+        if (!strcmp(argv[i], "--request") && !yue2_request_parse(&r, argv[i + 1])) {
             return 1;
         }
     }
@@ -104,7 +104,7 @@ int main(int argc, char ** argv) {
     if (!yue2_sampling_valid(r.abc_sampling, "abc")) {
         return 1;
     }
-    request_resolve_seed(&r);
+    yue2_request_resolve_seed(&r);
 
     BPETokenizer tok;
     if (!load_bpe_from_gguf(&tok, model_path)) {

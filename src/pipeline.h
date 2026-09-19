@@ -130,7 +130,7 @@ static bool pipeline_configure(Yue2Pipeline *             p,
     if (params.clamp_fp16) {
         fprintf(stderr, "[Pipeline] FP16 clamp enabled\n");
     }
-    if (!store_bpe(p->store, model_path)) {
+    if (!yue2_store_bpe(p->store, model_path)) {
         return false;
     }
 
@@ -162,7 +162,7 @@ static void pipeline_free(Yue2Pipeline * p) {
 // time, the LM reads them at every forward.
 static Qwen3LM * require_lm(Yue2Pipeline * p) {
     ModelKey  k = { MODEL_LM, p->model_path };
-    Qwen3LM * m = store_require_lm(p->store, k);
+    Qwen3LM * m = yue2_store_require_lm(p->store, k);
     if (m) {
         m->use_flash_attn = m->use_flash_attn && !p->params.no_fa;
         m->clamp_fp16     = p->params.clamp_fp16;
@@ -172,7 +172,7 @@ static Qwen3LM * require_lm(Yue2Pipeline * p) {
 
 static Yue2NAR * require_nar(Yue2Pipeline * p) {
     ModelKey  k = { MODEL_NAR, p->model_path };
-    Yue2NAR * m = store_require_nar(p->store, k);
+    Yue2NAR * m = yue2_store_require_nar(p->store, k);
     if (m) {
         m->use_flash_attn = m->use_flash_attn && !p->params.no_fa;
         m->clamp_fp16     = p->params.clamp_fp16;
@@ -182,7 +182,7 @@ static Yue2NAR * require_nar(Yue2Pipeline * p) {
 
 static VAEGGML * require_vae(Yue2Pipeline * p) {
     ModelKey k = { MODEL_VAE, p->vae_path };
-    return store_require_vae(p->store, k);
+    return yue2_store_require_vae(p->store, k);
 }
 
 static SheetSage2 * require_ss2(Yue2Pipeline * p) {
@@ -219,7 +219,7 @@ struct KvScope {
     Yue2Pipeline * p;
 
     ~KvScope() {
-        if (store_policy(p->store) == EVICT_STRICT) {
+        if (yue2_store_policy(p->store) == EVICT_STRICT) {
             qw3lm_kv_free(&p->kv);
         }
     }
@@ -250,7 +250,7 @@ static bool pipeline_generate(Yue2Pipeline *          p,
 
     KvScope kv_scope = { p };
 
-    BPETokenizer * tok    = store_bpe(p->store, p->model_path.c_str());
+    BPETokenizer * tok    = yue2_store_bpe(p->store, p->model_path.c_str());
     auto           encode = [tok](const std::string & text) {
         return bpe_encode(tok, text);
     };
