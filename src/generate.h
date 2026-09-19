@@ -18,6 +18,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <vector>
 
 struct Yue2Generation {
@@ -66,7 +67,8 @@ static bool yue2_generate(Qwen3LM *                             lm,
                           Yue2Phase                             phase,
                           std::vector<Yue2Generation> *         out,
                           bool (*cancelled)(void *) = nullptr,
-                          void * cancel_data        = nullptr) {
+                          void * cancel_data        = nullptr,
+                          std::function<void(int, int, const char*)> * progress = nullptr) {
     const int B       = (int) prefixes.size();
     const int context = kv->cfg.max_seq_len;
     bool      guided  = cfg_scale != 1.0f;
@@ -94,6 +96,9 @@ static bool yue2_generate(Qwen3LM *                             lm,
     yue2_phase_rows(phase, &row0, &rows);
     int          end   = phase == YUE2_PHASE_ABC ? YUE2_ABC_END : YUE2_MUSIC_END;
     const char * label = phase == YUE2_PHASE_ABC ? "Score" : "Semantic";
+    // Progress hook label: the same coarse stage name the pipeline maps onto
+    // the engine-level 0..100 band (see pipeline.h pipeline_generate).
+    const char * prog_label = phase == YUE2_PHASE_ABC ? "abc" : "ar";
     Timer        timer;
 
     // Logits in KV set order, [cond 0..B-1, uncond B..2B-1], the prefills and
@@ -170,6 +175,9 @@ static bool yue2_generate(Qwen3LM *                             lm,
         }
         if ((step % 100) == 0) {
             fprintf(stderr, "[AR] %s %d/%d\n", label, step, s.max_tokens);
+        }
+        if (progress && (step % 10) == 0) {
+            (*progress)(step, s.max_tokens, prog_label);
         }
         qw3lm_forward_batch(lm, kv, tokens.data(), kv_sets.data(), N, batched.data(), row0, rows);
         for (int i = 0; i < B; i++) {

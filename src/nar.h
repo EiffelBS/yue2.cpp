@@ -29,6 +29,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -520,7 +521,8 @@ static bool nar_solve(Yue2NAR *            n,
                       int                  steps,
                       const DebugDumper *  dbg,
                       bool (*cancelled)(void *) = nullptr,
-                      void * cancel_data        = nullptr) {
+                      void * cancel_data        = nullptr,
+                      std::function<void(int, int, const char*)> * progress = nullptr) {
     size_t             count = (size_t) n->latent_dim * T_lat * M;
     std::vector<float> first(count), mid(count), second(count);
     float              dt = 1.0f / (float) steps;
@@ -558,6 +560,9 @@ static bool nar_solve(Yue2NAR *            n,
         snprintf(name, sizeof(name), "nar_step%d_xt", step);
         debug_dump_2d(dbg, name, state, T_lat, n->latent_dim);
         fprintf(stderr, "[NAR] Step %d/%d, %.0f ms\n", step + 1, steps, step_timer.ms());
+        if (progress) {
+            (*progress)(step + 1, steps, "nar");
+        }
     }
     debug_dump_2d(dbg, "nar_x0", state, T_lat, n->latent_dim);
 

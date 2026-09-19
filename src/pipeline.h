@@ -25,6 +25,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -55,6 +56,13 @@ struct Yue2Pipeline {
     std::string        transcriber_path;  // the SheetSage2 GGUF, empty without one
     Yue2PipelineParams params;
     DebugDumper        dumper;
+
+    // OPTIONAL progress hook, called from pipeline_generate at coarse stage
+    // granularity - the same integration surface the minimaxmusic fork uses.
+    // Stages: "abc" (symbolic planner), "ar" (semantic token stream), "nar"
+    // (ODE steps), "vae" (decode tiles). done/total are stage-local; the
+    // engine maps them onto its global 0..100 band.
+    std::function<void(int done, int total, const char * label)> progress;
 
     // The cache, bound at configure to its config with the context override
     // and to the shared backend, held for the process lifetime
@@ -280,7 +288,7 @@ static bool pipeline_generate(Yue2Pipeline *          p,
         std::vector<int>            open = yue2_build_prompt_ids(encode, cot, r.style, r.lyrics, nullptr);
         std::vector<Yue2Generation> plans;
         if (!yue2_generate(lm, &p->kv, std::vector<std::vector<int>>(B, open), {}, 1.0f, r.abc_sampling, r.lm_seed,
-                           YUE2_PHASE_ABC, &plans, cancelled, cancel_data)) {
+                           YUE2_PHASE_ABC, &plans, cancelled, cancel_data, p->progress ? &p->progress : nullptr)) {
             return false;
         }
         for (int i = 0; i < B; i++) {
@@ -330,7 +338,7 @@ static bool pipeline_generate(Yue2Pipeline *          p,
             }
         }
         if (!yue2_generate(lm, &p->kv, prefixes, negatives, guidance, semantic, r.lm_seed, YUE2_PHASE_SEMANTIC, &codes,
-                           cancelled, cancel_data)) {
+                           cancelled, cancel_data, p->progress ? &p->progress : nullptr)) {
             return false;
         }
     }
@@ -454,7 +462,8 @@ static bool pipeline_generate(Yue2Pipeline *          p,
                        (*songs)[(size_t) i * M + j].latents.data() + (size_t) start * YUE2_LATENT_DIM,
                        span * sizeof(float));
             }
-            if (!nar_solve(nar, &p->kv, block.data(), frames, M, ar_len, i, r.steps, dbg, cancelled, cancel_data)) {
+            if (!nar_solve(nar, &p->kv, block.data(), frames, M, ar_len, i, r.steps, dbg, cancelled, cancel_data,
+                           p->progress ? &p->progress : nullptr)) {
                 return false;
             }
             for (int j = 0; j < M; j++) {
@@ -478,7 +487,8 @@ static bool pipeline_generate(Yue2Pipeline *          p,
         fprintf(stderr, "[VAE] Track %zu/%zu: song %zu variation %zu\n", t + 1, songs->size(), t / M, t % M);
         song.audio.assign((size_t) 2 * max_T_audio, 0.0f);
         song.T_audio = vae_ggml_decode_tiled(vae, song.latents.data(), song.T_lat, song.audio.data(), max_T_audio,
-                                             p->params.vae_core, p->params.vae_halo, cancelled, cancel_data);
+                                             p->params.vae_core, p->params.vae_halo, cancelled, cancel_data,
+                                             p->progress ? &p->progress : nullptr);
         if (song.T_audio < 0) {
             return false;
         }

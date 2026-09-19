@@ -17,6 +17,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -474,7 +475,8 @@ static int vae_ggml_decode_tiled(VAEGGML *     m,
                                  int           core_frames = 1024,
                                  int           halo_frames = 16,
                                  bool (*cancel)(void *)    = nullptr,
-                                 void * cancel_data        = nullptr) {
+                                 void * cancel_data        = nullptr,
+                                 std::function<void(int, int, const char*)> * progress = nullptr) {
     int total = T_latent * 1920 - 64;
     if (total > max_T_audio) {
         fprintf(stderr, "[VAE] T_audio %d exceeds max %d\n", total, max_T_audio);
@@ -483,6 +485,9 @@ static int vae_ggml_decode_tiled(VAEGGML *     m,
 
     // Short sequence: decode directly
     if (T_latent <= core_frames) {
+        if (progress) {
+            (*progress)(1, 1, "vae");
+        }
         return vae_ggml_decode(m, latent, T_latent, audio_out, max_T_audio);
     }
 
@@ -495,6 +500,9 @@ static int vae_ggml_decode_tiled(VAEGGML *     m,
         if (cancel && cancel(cancel_data)) {
             fprintf(stderr, "[VAE] Cancelled at tile %d/%d\n", i, num_tiles);
             return -1;
+        }
+        if (progress) {
+            (*progress)(i, num_tiles, "vae");
         }
         int start = i * core_frames;
         int end   = (start + core_frames > T_latent) ? T_latent : start + core_frames;
@@ -525,6 +533,10 @@ static int vae_ggml_decode_tiled(VAEGGML *     m,
 
     // Compact ch1 from offset max_T_audio to offset total
     memmove(audio_out + total, audio_out + max_T_audio, total * sizeof(float));
+
+    if (progress) {
+        (*progress)(num_tiles, num_tiles, "vae");
+    }
 
     fprintf(stderr, "[VAE] Tiled decode done: %d tiles -> T_audio=%d (%.2fs @ 48kHz), %.0f ms\n", num_tiles, total,
             (float) total / 48000.0f, decode_timer.ms());
