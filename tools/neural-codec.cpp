@@ -390,7 +390,7 @@ int main(int argc, char ** argv) {
         }
         free(planar);
 
-        VAEEncoder enc = {};
+        Yue2VAEEncoder enc = {};
         vae_enc_load(&enc, vae_path);
 
         int                max_T_latent = T_audio / HOP + 1;

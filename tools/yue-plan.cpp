@@ -111,7 +111,7 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-    Qwen3LM lm;
+    Yue2Qwen3LM lm;
     if (!qw3lm_load(&lm, model_path)) {
         return 1;
     }
@@ -119,7 +119,7 @@ int main(int argc, char ** argv) {
     lm.clamp_fp16     = clamp_fp16;
 
     // One cache set on the backend of the weights, the plan runs unguided
-    Qwen3LMConfig cfg = lm.cfg;
+    Yue2Qwen3LMConfig cfg = lm.cfg;
     if (max_seq > 0) {
         cfg.max_seq_len = max_seq;
     }

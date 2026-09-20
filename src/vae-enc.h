@@ -1,6 +1,6 @@
 // vae-enc.h: AutoencoderOobleck encoder (audio -> latent) via ggml
 //
-// Mirror of vae.h decoder. Reuses VAEResUnit, load helpers, graph ops.
+// Mirror of vae.h decoder. Reuses Yue2VAEResUnit, load helpers, graph ops.
 // Architecture: conv1(2->64,k=7) -> 6x(3xresunit+snake+strided_conv) -> snake+conv2(2048->128,k=3)
 // Output 128ch = mean[64] + scale[64]. Deterministic encode returns mean.
 // Downsample: 2x2x4x4x5x6 = 1920x (inverts the decoder upsample frame for frame)
@@ -10,16 +10,16 @@
 
 // Encoder block: 3xResUnit(in_ch) -> snake(in_ch) -> strided Conv1d(in_ch -> out_ch)
 // Decoder block is the mirror: snake(in_ch) -> ConvT(in_ch -> out_ch) -> 3xResUnit(out_ch)
-struct VAEEncBlock {
-    VAEResUnit          ru[3];
+struct Yue2VAEEncBlock {
+    Yue2VAEResUnit          ru[3];
     struct ggml_tensor *sa, *sb;  // snake [1, in_ch]
     struct ggml_tensor *dw, *db;  // strided conv [K, in_ch, out_ch], bias [out_ch]
     int                 in_ch, out_ch, stride, kernel, padding;
 };
 
-struct VAEEncoder {
+struct Yue2VAEEncoder {
     struct ggml_tensor *c1w, *c1b;  // conv1 [7, 2, 64], bias [64]
-    VAEEncBlock         blk[6];
+    Yue2VAEEncBlock         blk[6];
     struct ggml_tensor *sa, *sb;    // final snake [1, 2048]
     struct ggml_tensor *c2w, *c2b;  // conv2 [3, 2048, 128], bias [128]
 
@@ -41,7 +41,7 @@ struct VAEEncoder {
 };
 
 // Load encoder weights from the same VAE GGUF (encoder.* tensors)
-static void vae_enc_load(VAEEncoder * m, const char * path) {
+static void vae_enc_load(Yue2VAEEncoder * m, const char * path) {
     GGUFModel gf = {};
     if (!gf_load(&gf, path)) {
         fprintf(stderr, "[VAE-Enc] FATAL: cannot load %s\n", path);
@@ -68,7 +68,7 @@ static void vae_enc_load(VAEEncoder * m, const char * path) {
     m->c1b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 64);
 
     for (int i = 0; i < 6; i++) {
-        VAEEncBlock & b = m->blk[i];
+        Yue2VAEEncBlock & b = m->blk[i];
         b.in_ch         = in_ch[i];
         b.out_ch        = out_ch[i];
         b.stride        = strides[i];
@@ -78,7 +78,7 @@ static void vae_enc_load(VAEEncoder * m, const char * path) {
 
         // 3 res units at in_ch
         for (int r = 0; r < 3; r++) {
-            VAEResUnit & ru = b.ru[r];
+            Yue2VAEResUnit & ru = b.ru[r];
             ru.dilation     = dilations[r];
             ru.s1a          = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 1, C);
             ru.s1b          = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 1, C);
@@ -122,12 +122,12 @@ static void vae_enc_load(VAEEncoder * m, const char * path) {
     vae_load_bias(m->c1b, gf, "encoder.conv1.bias");
 
     for (int i = 0; i < 6; i++) {
-        VAEEncBlock & b       = m->blk[i];
+        Yue2VAEEncBlock & b       = m->blk[i];
         std::string   blk_pfx = "encoder.block." + std::to_string(i);
 
         // res_units first (same load pattern as decoder)
         for (int r = 0; r < 3; r++) {
-            VAEResUnit & ru = b.ru[r];
+            Yue2VAEResUnit & ru = b.ru[r];
             std::string  rp = blk_pfx + ".res_unit" + std::to_string(r + 1);
             vae_load_snake(ru.s1a, gf, rp + ".snake1.alpha");
             vae_load_snake_inv(ru.s1b, gf, rp + ".snake1.beta");
@@ -157,7 +157,7 @@ static void vae_enc_load(VAEEncoder * m, const char * path) {
 
 // Build encoder graph: audio [T_audio, 2] -> [T_latent, 128]
 static struct ggml_tensor * vae_enc_build_graph(struct ggml_context * ctx,
-                                                VAEEncoder *          m,
+                                                Yue2VAEEncoder *          m,
                                                 struct ggml_tensor *  audio) {  // [T, 2]
 
     // conv1: [T, 2] -> [T, 64]
@@ -165,7 +165,7 @@ static struct ggml_tensor * vae_enc_build_graph(struct ggml_context * ctx,
 
     // 6 encoder blocks: resunits(in_ch) -> snake(in_ch) -> strided conv(in_ch -> out_ch)
     for (int i = 0; i < 6; i++) {
-        VAEEncBlock & b = m->blk[i];
+        Yue2VAEEncBlock & b = m->blk[i];
         for (int r = 0; r < 3; r++) {
             x = vae_res_unit(ctx, &b.ru[r], x);
         }
@@ -182,7 +182,7 @@ static struct ggml_tensor * vae_enc_build_graph(struct ggml_context * ctx,
 
 // Core compute: build/cache graph, set input, run. Returns T_latent or -1.
 // Output stays in m->graph_output for caller to read.
-static int vae_enc_compute(VAEEncoder *  m,
+static int vae_enc_compute(Yue2VAEEncoder *  m,
                            const float * audio,  // [T_audio, 2] time-major interleaved stereo
                            int           T_audio) {
     // Rebuild graph when T_audio changes
@@ -262,7 +262,7 @@ static int vae_enc_frames(int T_audio) {
 // Encode API: audio [T_audio, 2] -> latent_out [T_latent, 64] (mean only, deterministic)
 // Returns T_latent (or -1 on error).
 // latent_out must hold at least (T_audio / 1920) * 64 floats.
-static int vae_enc_encode(VAEEncoder *  m,
+static int vae_enc_encode(Yue2VAEEncoder *  m,
                           const float * audio,       // [T_audio, 2] interleaved stereo
                           int           T_audio,
                           float *       latent_out,  // [T_latent, 64] output, time-major
@@ -304,7 +304,7 @@ static int vae_enc_encode(VAEEncoder *  m,
 // encodes the audio of [left, right) frames and keeps its core frames, every
 // one of them carrying the full receptive field of the untiled encoder.
 // Returns T_latent or -1 on error.
-static int vae_enc_encode_tiled(VAEEncoder *  m,
+static int vae_enc_encode_tiled(Yue2VAEEncoder *  m,
                                 const float * audio,       // [T_audio, 2] interleaved stereo
                                 int           T_audio,
                                 float *       latent_out,  // [T_latent, 64] output, time-major
@@ -367,7 +367,7 @@ static int vae_enc_encode_tiled(VAEEncoder *  m,
 }
 
 // Free all resources
-static void vae_enc_free(VAEEncoder * m) {
+static void vae_enc_free(Yue2VAEEncoder * m) {
     if (m->graph_ctx) {
         ggml_backend_sched_reset(m->sched);
         ggml_free(m->graph_ctx);

@@ -73,7 +73,7 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-    Qwen3LM lm;
+    Yue2Qwen3LM lm;
     if (!qw3lm_load(&lm, gguf_path)) {
         return 1;
     }

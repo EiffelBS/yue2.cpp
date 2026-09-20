@@ -42,7 +42,7 @@ int main(int argc, char ** argv) {
     }
     int N = (int) seqs.size();
 
-    Qwen3LM lm;
+    Yue2Qwen3LM lm;
     if (!qw3lm_load(&lm, argv[1])) {
         return 1;
     }

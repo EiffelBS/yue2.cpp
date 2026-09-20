@@ -141,7 +141,7 @@ int main(int argc, char ** argv) {
 
     // Model loads go through the store in STRICT policy: at most one half of
     // the backbone resident at a time, the cache staying between them
-    ModelStore * store = yue2_store_create(EVICT_STRICT);
+    Yue2ModelStore * store = yue2_store_create(EVICT_STRICT);
 
     Yue2Pipeline pipeline;
     pipeline.store = store;

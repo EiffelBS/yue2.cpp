@@ -1,6 +1,6 @@
 // model-store.cpp: centralised ownership of GGML modules.
 //
-// A single hashmap keyed by ModelKey holds every GPU module the pipeline
+// A single hashmap keyed by Yue2ModelKey holds every GPU module the pipeline
 // touches. Each entry carries the type-erased pointer, a refcount, and a
 // deleter that knows how to free the underlying struct. On require, the
 // store either hits the cache (refcount++) or evicts the other groups
@@ -35,16 +35,16 @@ static ModelGroup group_of(ModelKind kind) {
     return kind == MODEL_LM ? GROUP_AR : (kind == MODEL_SS2 ? GROUP_TRANSCRIBE : GROUP_SYNTH);
 }
 
-struct ModelKeyHash {
-    size_t operator()(const ModelKey & k) const noexcept {
+struct Yue2ModelKeyHash {
+    size_t operator()(const Yue2ModelKey & k) const noexcept {
         size_t h = std::hash<int>{}(static_cast<int>(k.kind));
         h ^= std::hash<std::string>{}(k.path) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
         return h;
     }
 };
 
-struct ModelKeyEq {
-    bool operator()(const ModelKey & a, const ModelKey & b) const noexcept {
+struct Yue2ModelKeyEq {
+    bool operator()(const Yue2ModelKey & a, const Yue2ModelKey & b) const noexcept {
         return a.kind == b.kind && a.path == b.path;
     }
 };
@@ -62,7 +62,7 @@ struct GpuEntry {
 
 // Reverse lookup: handle pointer -> key, so yue2_store_release can find the
 // entry from just the pointer without the caller carrying the key around.
-using HandleMap = std::unordered_map<void *, ModelKey>;
+using HandleMap = std::unordered_map<void *, Yue2ModelKey>;
 
 // CPU-resident entry. No eviction, no refcount. Keyed by path only.
 struct CpuEntry {
@@ -72,10 +72,10 @@ struct CpuEntry {
 
 }  // namespace
 
-struct ModelStore {
+struct Yue2ModelStore {
     EvictPolicy policy;
 
-    std::unordered_map<ModelKey, GpuEntry, ModelKeyHash, ModelKeyEq> gpu;
+    std::unordered_map<Yue2ModelKey, GpuEntry, Yue2ModelKeyHash, Yue2ModelKeyEq> gpu;
     HandleMap                                                        handle_to_key;
 
     // CPU resident tokenizers, keyed by backbone GGUF path. Small, never evicted.
@@ -88,9 +88,9 @@ struct ModelStore {
 // conflicting module still has refcount > 0: that would mean two
 // mutually exclusive modules are live at once, which violates the
 // contract in STRICT mode.
-static void evict_conflicts(ModelStore * s, const ModelKey & keep) {
+static void evict_conflicts(Yue2ModelStore * s, const Yue2ModelKey & keep) {
     for (auto it = s->gpu.begin(); it != s->gpu.end();) {
-        ModelKeyEq eq;
+        Yue2ModelKeyEq eq;
         bool       conflicts =
             group_of(it->first.kind) != group_of(keep.kind) || (it->first.kind == keep.kind && !eq(it->first, keep));
         if (!conflicts) {
@@ -113,8 +113,8 @@ static void evict_conflicts(ModelStore * s, const ModelKey & keep) {
 namespace {
 
 template <typename T>
-static T * install_entry(ModelStore *     s,
-                         const ModelKey & k,
+static T * install_entry(Yue2ModelStore *     s,
+                         const Yue2ModelKey & k,
                          T *              obj,
                          size_t           bytes,
                          const char *     label,
@@ -130,7 +130,7 @@ static T * install_entry(ModelStore *     s,
     return obj;
 }
 
-template <typename T> static T * cache_hit(ModelStore * s, const ModelKey & k) {
+template <typename T> static T * cache_hit(Yue2ModelStore * s, const Yue2ModelKey & k) {
     auto it = s->gpu.find(k);
     if (it == s->gpu.end()) {
         return nullptr;
@@ -141,18 +141,18 @@ template <typename T> static T * cache_hit(ModelStore * s, const ModelKey & k) {
 
 }  // namespace
 
-ModelStore * yue2_store_create(EvictPolicy policy) {
-    auto * s  = new ModelStore();
+Yue2ModelStore * yue2_store_create(EvictPolicy policy) {
+    auto * s  = new Yue2ModelStore();
     s->policy = policy;
     fprintf(stderr, "[Store] Created (policy=%s)\n", policy == EVICT_STRICT ? "STRICT" : "NEVER");
     return s;
 }
 
-EvictPolicy yue2_store_policy(const ModelStore * s) {
+EvictPolicy yue2_store_policy(const Yue2ModelStore * s) {
     return s->policy;
 }
 
-void yue2_store_free(ModelStore * s) {
+void yue2_store_free(Yue2ModelStore * s) {
     if (!s) {
         return;
     }
@@ -175,8 +175,8 @@ void yue2_store_free(ModelStore * s) {
 // load, install entry. The deleter is a plain C function that matches the
 // module's free path, avoiding template plumbing.
 static void del_lm(void * p) {
-    qw3lm_free(static_cast<Qwen3LM *>(p));
-    delete static_cast<Qwen3LM *>(p);
+    qw3lm_free(static_cast<Yue2Qwen3LM *>(p));
+    delete static_cast<Yue2Qwen3LM *>(p);
 }
 
 static void del_nar(void * p) {
@@ -196,7 +196,7 @@ static void del_ss2(void * p) {
 
 // Weight buffer size helpers: the two halves expose a WeightCtx at
 // m->wctx.buffer, the VAE exposes m->buf directly.
-static size_t bytes_of_lm(const Qwen3LM * m) {
+static size_t bytes_of_lm(const Yue2Qwen3LM * m) {
     return m && m->wctx.buffer ? ggml_backend_buffer_get_size(m->wctx.buffer) : 0;
 }
 
@@ -212,15 +212,15 @@ static size_t bytes_of_ss2(const SheetSage2 * m) {
     return m && m->wctx.buffer ? ggml_backend_buffer_get_size(m->wctx.buffer) : 0;
 }
 
-Qwen3LM * yue2_store_require_lm(ModelStore * s, const ModelKey & k) {
-    if (auto * hit = cache_hit<Qwen3LM>(s, k)) {
+Yue2Qwen3LM * yue2_store_require_lm(Yue2ModelStore * s, const Yue2ModelKey & k) {
+    if (auto * hit = cache_hit<Yue2Qwen3LM>(s, k)) {
         return hit;
     }
     if (s->policy == EVICT_STRICT) {
         evict_conflicts(s, k);
     }
     Timer     t;
-    Qwen3LM * m = new Qwen3LM();
+    Yue2Qwen3LM * m = new Yue2Qwen3LM();
     if (!qw3lm_load(m, k.path.c_str())) {
         delete m;
         return nullptr;
@@ -230,7 +230,7 @@ Qwen3LM * yue2_store_require_lm(ModelStore * s, const ModelKey & k) {
     return m;
 }
 
-Yue2NAR * yue2_store_require_nar(ModelStore * s, const ModelKey & k) {
+Yue2NAR * yue2_store_require_nar(Yue2ModelStore * s, const Yue2ModelKey & k) {
     if (auto * hit = cache_hit<Yue2NAR>(s, k)) {
         return hit;
     }
@@ -248,7 +248,7 @@ Yue2NAR * yue2_store_require_nar(ModelStore * s, const ModelKey & k) {
     return m;
 }
 
-VAEGGML * yue2_store_require_vae(ModelStore * s, const ModelKey & k) {
+VAEGGML * yue2_store_require_vae(Yue2ModelStore * s, const Yue2ModelKey & k) {
     if (auto * hit = cache_hit<VAEGGML>(s, k)) {
         return hit;
     }
@@ -263,7 +263,7 @@ VAEGGML * yue2_store_require_vae(ModelStore * s, const ModelKey & k) {
     return m;
 }
 
-SheetSage2 * yue2_store_require_ss2(ModelStore * s, const ModelKey & k) {
+SheetSage2 * yue2_store_require_ss2(Yue2ModelStore * s, const Yue2ModelKey & k) {
     if (auto * hit = cache_hit<SheetSage2>(s, k)) {
         return hit;
     }
@@ -281,7 +281,7 @@ SheetSage2 * yue2_store_require_ss2(ModelStore * s, const ModelKey & k) {
     return m;
 }
 
-void yue2_store_release(ModelStore * s, void * handle) {
+void yue2_store_release(Yue2ModelStore * s, void * handle) {
     if (!s || !handle) {
         return;
     }
@@ -307,7 +307,7 @@ void yue2_store_release(ModelStore * s, void * handle) {
     }
 }
 
-BPETokenizer * yue2_store_bpe(ModelStore * s, const char * lm_path) {
+BPETokenizer * yue2_store_bpe(Yue2ModelStore * s, const char * lm_path) {
     std::string key = lm_path ? lm_path : "";
     auto        it  = s->bpe_by_path.find(key);
     if (it != s->bpe_by_path.end()) {
@@ -327,7 +327,7 @@ BPETokenizer * yue2_store_bpe(ModelStore * s, const char * lm_path) {
     return bpe;
 }
 
-size_t yue2_store_vram_bytes(const ModelStore * s) {
+size_t yue2_store_vram_bytes(const Yue2ModelStore * s) {
     if (!s) {
         return 0;
     }
@@ -338,7 +338,7 @@ size_t yue2_store_vram_bytes(const ModelStore * s) {
     return total;
 }
 
-int yue2_store_gpu_module_count(const ModelStore * s) {
+int yue2_store_gpu_module_count(const Yue2ModelStore * s) {
     if (!s) {
         return 0;
     }

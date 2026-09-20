@@ -6,7 +6,7 @@
 #pragma once
 
 #include "graph-arena.h"
-#include "qwen3-enc.h"  // Qwen3Layer, Qwen3Config, layer build helpers
+#include "qwen3-enc.h"  // Yue2Qwen3Layer, Qwen3Config, layer build helpers
 #include "static-graph.h"
 
 #include <cmath>
@@ -16,7 +16,7 @@
 #include <vector>
 
 // LM config (superset of encoder config)
-struct Qwen3LMConfig {
+struct Yue2Qwen3LMConfig {
     int   vocab_size;
     int   hidden_size;
     int   intermediate_size;
@@ -39,7 +39,7 @@ struct Qwen3LMConfig {
 // fresh input upload per step: n_kv_pad advances every 256 steps, N and the
 // batch base set hold within a generation. A prefill forward clobbers the
 // shared sched allocation, so it invalidates this cache.
-struct Qw3lmGraphCache {
+struct Yue2Qw3lmGraphCache {
     bool                  built        = false;
     int                   key_n_kv_pad = 0;
     int                   key_N        = 0;
@@ -63,7 +63,7 @@ struct Qw3lmGraphCache {
 // the NAR reads it, and the weights of either half may leave VRAM in
 // between while the cache stays.
 struct Qw3lmKvCache {
-    Qwen3LMConfig         cfg;  // shape source: layers, heads, max_seq_len
+    Yue2Qwen3LMConfig         cfg;  // shape source: layers, heads, max_seq_len
     ggml_backend_t        backend;
     struct ggml_context * ctx;
     ggml_backend_buffer_t buf;
@@ -77,14 +77,14 @@ struct Qw3lmKvCache {
     int                   n_sets;
 };
 
-struct Qwen3LM {
-    Qwen3LMConfig cfg;
+struct Yue2Qwen3LM {
+    Yue2Qwen3LMConfig cfg;
 
     // Weights (on backend)
     struct ggml_tensor * embed_tokens;  // [H, V] on GPU
     struct ggml_tensor * lm_head;       // [H, V], embed_tokens when tie_embeddings
     struct ggml_tensor * final_norm;    // [H]
-    Qwen3Layer           layers[QW3LM_MAX_LAYERS];
+    Yue2Qwen3Layer           layers[QW3LM_MAX_LAYERS];
 
     WeightCtx            wctx;
     ggml_backend_t       backend;
@@ -99,7 +99,7 @@ struct Qwen3LM {
     GraphArena arena_batch;
 
     // Static batched decode graph, replayed across the token loop.
-    Qw3lmGraphCache batch_graph;
+    Yue2Qw3lmGraphCache batch_graph;
 };
 
 // Parse config.json integers, floats, bools
@@ -158,9 +158,9 @@ static bool qw3lm_json_bool(const char * json, const char * key, bool fb) {
 }
 
 // Load config from GGUF KV metadata (yue2.config_json)
-static Qwen3LMConfig qw3lm_load_config(const GGUFModel & gf) {
+static Yue2Qwen3LMConfig qw3lm_load_config(const GGUFModel & gf) {
     // YuE2 backbone defaults (YuE2-3B/config.json)
-    Qwen3LMConfig c = {
+    Yue2Qwen3LMConfig c = {
         /*vocab_size*/ 184704,
         /*hidden_size*/ 2048,
         /*intermediate_size*/ 6144,
@@ -194,7 +194,7 @@ static Qwen3LMConfig qw3lm_load_config(const GGUFModel & gf) {
 }
 
 // Init backend (same pattern as qwen3.h)
-static void qw3lm_init_backend(Qwen3LM * m) {
+static void qw3lm_init_backend(Yue2Qwen3LM * m) {
     BackendPair bp    = backend_init("LM");
     m->backend        = bp.backend;
     m->cpu_backend    = bp.cpu_backend;
@@ -204,7 +204,7 @@ static void qw3lm_init_backend(Qwen3LM * m) {
 }
 
 // Bind a cache to its config and backend, no set allocated yet
-static void qw3lm_kv_init(Qw3lmKvCache * kv, const Qwen3LMConfig & cfg, ggml_backend_t backend) {
+static void qw3lm_kv_init(Qw3lmKvCache * kv, const Yue2Qwen3LMConfig & cfg, ggml_backend_t backend) {
     *kv         = {};
     kv->cfg     = cfg;
     kv->backend = backend;
@@ -225,7 +225,7 @@ static void qw3lm_kv_free(Qw3lmKvCache * kv) {
 
 // Allocate n_sets sets on the backend, replacing whatever the cache held
 static bool qw3lm_kv_alloc(Qw3lmKvCache * kv, int n_sets) {
-    const Qwen3LMConfig & cfg = kv->cfg;
+    const Yue2Qwen3LMConfig & cfg = kv->cfg;
     int                   D   = cfg.head_dim;
     int                   Nkv = cfg.n_kv_heads;
     int                   L   = cfg.n_layers;
@@ -309,7 +309,7 @@ static void qw3lm_kv_trim(Qw3lmKvCache * kv, int set, int n) {
 
 // Read the config of a backbone GGUF without loading its weights: the
 // cache is sized from it before either half loads
-static bool qw3lm_read_config(const char * gguf_path, Qwen3LMConfig * cfg) {
+static bool qw3lm_read_config(const char * gguf_path, Yue2Qwen3LMConfig * cfg) {
     GGUFModel gf;
     if (!gf_load(&gf, gguf_path)) {
         fprintf(stderr, "[LM-Load] FATAL: cannot load %s\n", gguf_path);
@@ -321,7 +321,7 @@ static bool qw3lm_read_config(const char * gguf_path, Qwen3LMConfig * cfg) {
 }
 
 // Load model weights from GGUF
-static bool qw3lm_load(Qwen3LM * m, const char * gguf_path) {
+static bool qw3lm_load(Yue2Qwen3LM * m, const char * gguf_path) {
     *m = {};
 
     qw3lm_init_backend(m);
@@ -333,7 +333,7 @@ static bool qw3lm_load(Qwen3LM * m, const char * gguf_path) {
     }
 
     m->cfg                  = qw3lm_load_config(gf);
-    const Qwen3LMConfig & c = m->cfg;
+    const Yue2Qwen3LMConfig & c = m->cfg;
     fprintf(stderr, "[LM-Config] %dL, H=%d, V=%d, Nh=%d, Nkv=%d, D=%d, tied=%d\n", c.n_layers, c.hidden_size,
             c.vocab_size, c.n_heads, c.n_kv_heads, c.head_dim, c.tie_embeddings);
 
@@ -377,8 +377,8 @@ static bool qw3lm_load(Qwen3LM * m, const char * gguf_path) {
 // kv_rows: [n_tokens] i64
 static struct ggml_tensor * qw3lm_build_attn(struct ggml_context * ctx,
                                              struct ggml_cgraph *  gf,
-                                             const Qwen3LMConfig & c,
-                                             Qwen3Layer *          ly,
+                                             const Yue2Qwen3LMConfig & c,
+                                             Yue2Qwen3Layer *          ly,
                                              struct ggml_tensor *  x,
                                              struct ggml_tensor *  positions,
                                              struct ggml_tensor *  mask,
@@ -477,7 +477,7 @@ static struct ggml_tensor * qw3lm_build_attn(struct ggml_context * ctx,
 // Rows [row0, row0 + rows) of the LM head, the vocabulary window a stage
 // samples from: the head is the largest matmul of a decode step and the
 // logits it drops are never read
-static struct ggml_tensor * qw3lm_head_rows(struct ggml_context * ctx, const Qwen3LM * m, int row0, int rows) {
+static struct ggml_tensor * qw3lm_head_rows(struct ggml_context * ctx, const Yue2Qwen3LM * m, int row0, int rows) {
     return ggml_view_2d(ctx, m->lm_head, m->cfg.hidden_size, rows, m->lm_head->nb[1],
                         (size_t) row0 * m->lm_head->nb[1]);
 }
@@ -486,7 +486,7 @@ static struct ggml_tensor * qw3lm_head_rows(struct ggml_context * ctx, const Qwe
 // LM head rows [row0, row0 + rows).
 // kv_set: which KV cache set to use (0=conditional, 1=unconditional for CFG).
 // Rebuilds and reallocates its graph, which invalidates the static decode graph.
-static void qw3lm_forward(Qwen3LM *      m,
+static void qw3lm_forward(Yue2Qwen3LM *      m,
                           Qw3lmKvCache * kv,
                           const int *    token_ids,
                           int            n_tokens,
@@ -499,7 +499,7 @@ static void qw3lm_forward(Qwen3LM *      m,
         m->batch_graph.built = false;
     }
 
-    const Qwen3LMConfig & c      = m->cfg;
+    const Yue2Qwen3LMConfig & c      = m->cfg;
     int                   H      = c.hidden_size;
     int                   kv_pos = kv->pos[kv_set];
     int                   kv_len = kv_pos + n_tokens;
@@ -543,7 +543,7 @@ static void qw3lm_forward(Qwen3LM *      m,
 
     // Transformer layers
     for (int l = 0; l < c.n_layers; l++) {
-        Qwen3Layer * ly = &m->layers[l];
+        Yue2Qwen3Layer * ly = &m->layers[l];
 
         // Pre-attention norm
         struct ggml_tensor * norm = qwen3_rms_norm(ctx, hidden, ly->input_layernorm, c.rms_norm_eps);
@@ -639,7 +639,7 @@ static void qw3lm_forward(Qwen3LM *      m,
 // kv_sets[N]: which KV set each token uses, always consecutive from kv_sets[0].
 // logits: [N * rows] output, N logit vectors of the LM head rows
 // [row0, row0 + rows) concatenated.
-static void qw3lm_forward_batch(Qwen3LM *      m,
+static void qw3lm_forward_batch(Yue2Qwen3LM *      m,
                                 Qw3lmKvCache * kv,
                                 const int *    token_ids,
                                 const int *    kv_sets,
@@ -647,7 +647,7 @@ static void qw3lm_forward_batch(Qwen3LM *      m,
                                 float *        logits,
                                 int            row0,
                                 int            rows) {
-    const Qwen3LMConfig & c   = m->cfg;
+    const Yue2Qwen3LMConfig & c   = m->cfg;
     int                   D   = c.head_dim;
     int                   Nh  = c.n_heads;
     int                   Nkv = c.n_kv_heads;
@@ -717,7 +717,7 @@ static void qw3lm_forward_batch(Qwen3LM *      m,
         struct ggml_tensor * hidden = ggml_get_rows(ctx, m->embed_tokens, token_ids_t);
 
         for (int l = 0; l < c.n_layers; l++) {
-            Qwen3Layer * ly = &m->layers[l];
+            Yue2Qwen3Layer * ly = &m->layers[l];
 
             // Pre-attention norm [H, N]
             struct ggml_tensor * norm = qwen3_rms_norm(ctx, hidden, ly->input_layernorm, c.rms_norm_eps);
@@ -898,7 +898,7 @@ static void qw3lm_forward_batch(Qwen3LM *      m,
 }
 
 // Free all resources
-static void qw3lm_free(Qwen3LM * m) {
+static void qw3lm_free(Yue2Qwen3LM * m) {
     static_graph_release(&m->batch_graph.graph, m->sched);
     graph_arena_free(&m->arena_batch);
     graph_arena_free(&m->arena_prefill);

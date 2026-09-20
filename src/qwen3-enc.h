@@ -35,7 +35,7 @@ struct Qwen3Config {
 };
 
 // Per-layer weights
-struct Qwen3Layer {
+struct Yue2Qwen3Layer {
     struct ggml_tensor * input_layernorm;      // [H]
     struct ggml_tensor * post_attn_layernorm;  // [H]
 
@@ -98,7 +98,7 @@ static struct ggml_tensor * qwen3_rms_norm(struct ggml_context * ctx,
 
 // MLP: SwiGLU (fused gate+up or separate)
 static struct ggml_tensor * qwen3_build_mlp(struct ggml_context * ctx,
-                                            Qwen3Layer *          ly,
+                                            Yue2Qwen3Layer *          ly,
                                             struct ggml_tensor *  x,  // [H, S]
                                             int                   S) {
     (void) S;
@@ -117,7 +117,7 @@ static struct ggml_tensor * qwen3_build_mlp(struct ggml_context * ctx,
 // Loading
 static void qwen3_load_layer(WeightCtx *         wctx,
                              const GGUFModel &   gf,
-                             Qwen3Layer *        ly,
+                             Yue2Qwen3Layer *        ly,
                              const std::string & prefix,
                              int                 layer_idx = -1) {
     ly->input_layernorm     = gf_load_tensor_f32(wctx, gf, prefix + ".input_layernorm.weight");

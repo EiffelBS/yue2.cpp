@@ -22,7 +22,7 @@
 #include <vector>
 
 // Structs
-struct VAEResUnit {
+struct Yue2VAEResUnit {
     struct ggml_tensor *s1a, *s1b;  // snake1 exp(alpha), exp(beta) [1, C]
     struct ggml_tensor *c1w, *c1b;  // conv1 fused [7, C, C], bias [C]
     struct ggml_tensor *s2a, *s2b;  // snake2
@@ -30,16 +30,16 @@ struct VAEResUnit {
     int                 dilation;
 };
 
-struct VAEBlock {
+struct Yue2VAEBlock {
     struct ggml_tensor *sa, *sb;    // snake exp(a/b) [1, in_ch]
     struct ggml_tensor *ctw, *ctb;  // conv_transpose F16 [IC, K*OC] pre-permuted, bias [out_ch]
     int                 in_ch, out_ch, stride, kernel;
-    VAEResUnit          ru[3];
+    Yue2VAEResUnit          ru[3];
 };
 
 struct VAEGGML {
     struct ggml_tensor * c1w, *c1b;  // conv1 [7, 64, 2048], bias [2048]
-    VAEBlock             blk[6];
+    Yue2VAEBlock             blk[6];
     struct ggml_tensor * sa, *sb;    // final snake [1, 64]
     struct ggml_tensor * c2w;        // conv2 [7, 64, 2] (no bias)
 
@@ -189,7 +189,7 @@ static void vae_ggml_load(VAEGGML * m, const char * path) {
     m->c1b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 2048);
 
     for (int i = 0; i < 6; i++) {
-        VAEBlock & b = m->blk[i];
+        Yue2VAEBlock & b = m->blk[i];
         b.in_ch      = in_ch[i];
         b.out_ch     = out_ch[i];
         b.stride     = strides[i];
@@ -200,7 +200,7 @@ static void vae_ggml_load(VAEGGML * m, const char * path) {
         b.ctw        = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, in_ch[i], b.kernel * out_ch[i]);
         b.ctb        = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, out_ch[i]);
         for (int r = 0; r < 3; r++) {
-            VAEResUnit & ru = b.ru[r];
+            Yue2VAEResUnit & ru = b.ru[r];
             ru.dilation     = dilations[r];
             ru.s1a          = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 1, C);
             ru.s1b          = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 1, C);
@@ -234,14 +234,14 @@ static void vae_ggml_load(VAEGGML * m, const char * path) {
     vae_load_bias(m->c1b, gf, "decoder.conv1.bias");
 
     for (int i = 0; i < 6; i++) {
-        VAEBlock &  b       = m->blk[i];
+        Yue2VAEBlock &  b       = m->blk[i];
         std::string blk_pfx = "decoder.block." + std::to_string(i);
         vae_load_snake(b.sa, gf, blk_pfx + ".snake1.alpha");
         vae_load_snake_inv(b.sb, gf, blk_pfx + ".snake1.beta");
         vae_fuse_wn_ct(b.ctw, gf, blk_pfx + ".conv_t1");
         vae_load_bias(b.ctb, gf, blk_pfx + ".conv_t1.bias");
         for (int r = 0; r < 3; r++) {
-            VAEResUnit & ru = b.ru[r];
+            Yue2VAEResUnit & ru = b.ru[r];
             std::string  rp = blk_pfx + ".res_unit" + std::to_string(r + 1);
             vae_load_snake(ru.s1a, gf, rp + ".snake1.alpha");
             vae_load_snake_inv(ru.s1b, gf, rp + ".snake1.beta");
@@ -328,7 +328,7 @@ static struct ggml_tensor * vae_conv_t1d(struct ggml_context * ctx,
 
 // ResUnit forward
 static struct ggml_tensor * vae_res_unit(struct ggml_context * ctx,
-                                         VAEResUnit *          ru,
+                                         Yue2VAEResUnit *          ru,
                                          struct ggml_tensor *  x) {  // [T, C]
     struct ggml_tensor * skip = x;
 
@@ -353,7 +353,7 @@ static struct ggml_tensor * vae_ggml_build_graph(struct ggml_context * ctx,
 
     // 6 decoder blocks
     for (int i = 0; i < 6; i++) {
-        VAEBlock & b = m->blk[i];
+        Yue2VAEBlock & b = m->blk[i];
         // snake -> conv_transpose (upsample), padding = ceil(stride / 2)
         x            = vae_snake(ctx, x, b.sa, b.sb);
         int pad      = (b.stride + 1) / 2;

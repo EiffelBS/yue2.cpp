@@ -6,7 +6,7 @@
 // decode to 48 kHz stereo, for every song of the batch and every noise
 // variation of a song.
 //
-// The modules come from a ModelStore: the AR half for the two token stages,
+// The modules come from a Yue2ModelStore: the AR half for the two token stages,
 // the NAR half and the VAE for the synthesis, required per stage and
 // released after it, so the store can keep one half in VRAM at a time. The
 // KV cache belongs to the pipeline: the NAR reads the cache the AR decode
@@ -50,7 +50,7 @@ struct Yue2PipelineParams {
 };
 
 struct Yue2Pipeline {
-    ModelStore *       store = nullptr;   // borrowed, owned by the tool
+    Yue2ModelStore *       store = nullptr;   // borrowed, owned by the tool
     std::string        model_path;        // the backbone GGUF, both halves and the tokenizer
     std::string        vae_path;
     std::string        transcriber_path;  // the SheetSage2 GGUF, empty without one
@@ -134,7 +134,7 @@ static bool pipeline_configure(Yue2Pipeline *             p,
         return false;
     }
 
-    Qwen3LMConfig cfg;
+    Yue2Qwen3LMConfig cfg;
     if (!qw3lm_read_config(model_path, &cfg)) {
         return false;
     }
@@ -160,9 +160,9 @@ static void pipeline_free(Yue2Pipeline * p) {
 // configured paths, and applies the runtime knobs after every require
 // (idempotent on cache hits). The NAR bakes them into its graph at build
 // time, the LM reads them at every forward.
-static Qwen3LM * require_lm(Yue2Pipeline * p) {
-    ModelKey  k = { MODEL_LM, p->model_path };
-    Qwen3LM * m = yue2_store_require_lm(p->store, k);
+static Yue2Qwen3LM * require_lm(Yue2Pipeline * p) {
+    Yue2ModelKey  k = { MODEL_LM, p->model_path };
+    Yue2Qwen3LM * m = yue2_store_require_lm(p->store, k);
     if (m) {
         m->use_flash_attn = m->use_flash_attn && !p->params.no_fa;
         m->clamp_fp16     = p->params.clamp_fp16;
@@ -171,7 +171,7 @@ static Qwen3LM * require_lm(Yue2Pipeline * p) {
 }
 
 static Yue2NAR * require_nar(Yue2Pipeline * p) {
-    ModelKey  k = { MODEL_NAR, p->model_path };
+    Yue2ModelKey  k = { MODEL_NAR, p->model_path };
     Yue2NAR * m = yue2_store_require_nar(p->store, k);
     if (m) {
         m->use_flash_attn = m->use_flash_attn && !p->params.no_fa;
@@ -181,12 +181,12 @@ static Yue2NAR * require_nar(Yue2Pipeline * p) {
 }
 
 static VAEGGML * require_vae(Yue2Pipeline * p) {
-    ModelKey k = { MODEL_VAE, p->vae_path };
+    Yue2ModelKey k = { MODEL_VAE, p->vae_path };
     return yue2_store_require_vae(p->store, k);
 }
 
 static SheetSage2 * require_ss2(Yue2Pipeline * p) {
-    ModelKey     k = { MODEL_SS2, p->transcriber_path };
+    Yue2ModelKey     k = { MODEL_SS2, p->transcriber_path };
     SheetSage2 * m = yue2_store_require_ss2(p->store, k);
     if (m) {
         m->use_flash_attn = m->use_flash_attn && !p->params.no_fa;
@@ -208,7 +208,7 @@ static bool pipeline_transcribe(Yue2Pipeline * p,
         *error = "transcriber unavailable";
         return false;
     }
-    ModelHandle hold(p->store, m);
+    Yue2ModelHandle hold(p->store, m);
     return ss2_transcribe(m, audio, n_samples, melody_only, abc, error, &p->dumper);
 }
 
@@ -272,8 +272,8 @@ static bool pipeline_generate(Yue2Pipeline *          p,
 
     // The AR half holds the GPU for the plan and the semantic stage, then
     // steps aside for the synthesis
-    std::optional<ModelHandle> lm_hold;
-    Qwen3LM *                  lm = nullptr;
+    std::optional<Yue2ModelHandle> lm_hold;
+    Yue2Qwen3LM *                  lm = nullptr;
     if (planned || !replay) {
         lm = require_lm(p);
         if (!lm) {
@@ -400,7 +400,7 @@ static bool pipeline_generate(Yue2Pipeline *          p,
 
     // The NAR stays resident across songs and chunks, and steps aside for
     // the prefill of a chunk
-    std::optional<ModelHandle> nar_hold;
+    std::optional<Yue2ModelHandle> nar_hold;
     Yue2NAR *                  nar = nullptr;
     if (!qw3lm_kv_sets(&p->kv, 1)) {
         return false;
@@ -430,11 +430,11 @@ static bool pipeline_generate(Yue2Pipeline *          p,
             if (kept < ar_len) {
                 nar_hold.reset();
                 nar                = nullptr;
-                Qwen3LM * lm_chunk = require_lm(p);
+                Yue2Qwen3LM * lm_chunk = require_lm(p);
                 if (!lm_chunk) {
                     return false;
                 }
-                ModelHandle lm_chunk_hold(p->store, lm_chunk);
+                Yue2ModelHandle lm_chunk_hold(p->store, lm_chunk);
                 qw3lm_kv_trim(&p->kv, i, kept);
                 qw3lm_forward(lm_chunk, &p->kv, sequence.data() + kept, ar_len - kept, i, probe.data(), row0, rows);
             }
@@ -480,7 +480,7 @@ static bool pipeline_generate(Yue2Pipeline *          p,
     if (!vae) {
         return false;
     }
-    ModelHandle vae_hold(p->store, vae);
+    Yue2ModelHandle vae_hold(p->store, vae);
     for (size_t t = 0; t < songs->size(); t++) {
         Yue2Song & song        = (*songs)[t];
         int        max_T_audio = song.T_lat * YUE2_HOP;

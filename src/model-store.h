@@ -29,10 +29,10 @@
 //       GGUF trade places in VRAM around it.
 //
 //   invariant held under BOTH policies
-//       Exactly ONE instance per ModelKey for the whole process. Two
+//       Exactly ONE instance per Yue2ModelKey for the whole process. Two
 //       requires with the same key return the same pointer.
 //
-// A ModelStore holds the GGML module instances that the pipeline needs
+// A Yue2ModelStore holds the GGML module instances that the pipeline needs
 // (AR half, NAR half, VAE). The pipeline asks the store for a module by key
 // and returns it when done. The store decides what stays in VRAM and what
 // gets evicted, following the policy above set at creation time.
@@ -61,16 +61,16 @@
 #include <cstddef>
 #include <string>
 
-struct ModelStore;
+struct Yue2ModelStore;
 
 enum ModelKind {
-    MODEL_LM,   // Qwen3LM  the AR half of the backbone GGUF
+    MODEL_LM,   // Yue2Qwen3LM  the AR half of the backbone GGUF
     MODEL_NAR,  // Yue2NAR  the NAR half of the same GGUF
     MODEL_VAE,  // VAEGGML  from the VAE GGUF
     MODEL_SS2,  // SheetSage2 from the transcriber GGUF
 };
 
-struct ModelKey {
+struct Yue2ModelKey {
     ModelKind   kind;
     std::string path;  // GGUF path the module is loaded from
 };
@@ -80,9 +80,9 @@ enum EvictPolicy {
     EVICT_NEVER,   // --keep-loaded: never evict, accumulate
 };
 
-ModelStore * yue2_store_create(EvictPolicy policy);
-void         yue2_store_free(ModelStore * s);
-EvictPolicy  yue2_store_policy(const ModelStore * s);
+Yue2ModelStore * yue2_store_create(EvictPolicy policy);
+void         yue2_store_free(Yue2ModelStore * s);
+EvictPolicy  yue2_store_policy(const Yue2ModelStore * s);
 
 // Typed GPU module accessors. Each returns a pointer owned by the store;
 // never free it yourself. Returns NULL on load failure.
@@ -91,44 +91,44 @@ EvictPolicy  yue2_store_policy(const ModelStore * s);
 // matching release. In EVICT_STRICT, require evicts every module outside
 // its coexistence group whose refcount is zero; if any conflicting module
 // has refcount > 0 the store aborts (a programming error in the caller).
-Qwen3LM *    yue2_store_require_lm(ModelStore * s, const ModelKey & k);
-Yue2NAR *    yue2_store_require_nar(ModelStore * s, const ModelKey & k);
-VAEGGML *    yue2_store_require_vae(ModelStore * s, const ModelKey & k);
-SheetSage2 * yue2_store_require_ss2(ModelStore * s, const ModelKey & k);
+Yue2Qwen3LM *    yue2_store_require_lm(Yue2ModelStore * s, const Yue2ModelKey & k);
+Yue2NAR *    yue2_store_require_nar(Yue2ModelStore * s, const Yue2ModelKey & k);
+VAEGGML *    yue2_store_require_vae(Yue2ModelStore * s, const Yue2ModelKey & k);
+SheetSage2 * yue2_store_require_ss2(Yue2ModelStore * s, const Yue2ModelKey & k);
 
 // Release decrements the refcount for the module behind this handle.
 // Pass exactly the pointer returned by require. After release, the pointer
 // must not be used: in EVICT_STRICT it may be unloaded immediately.
-void yue2_store_release(ModelStore * s, void * handle);
+void yue2_store_release(Yue2ModelStore * s, void * handle);
 
 // CPU-resident accessor. Loaded on first call, kept forever, never
 // evicted: the tokenizer travels with the backbone GGUF metadata (a few
 // MB). Returns NULL on load failure.
-BPETokenizer * yue2_store_bpe(ModelStore * s, const char * lm_path);
+BPETokenizer * yue2_store_bpe(Yue2ModelStore * s, const char * lm_path);
 
 // Observability: sum of currently resident GPU module weight buffers, and
 // the count of loaded GPU modules.
-size_t yue2_store_vram_bytes(const ModelStore * s);
-int    yue2_store_gpu_module_count(const ModelStore * s);
+size_t yue2_store_vram_bytes(const Yue2ModelStore * s);
+int    yue2_store_gpu_module_count(const Yue2ModelStore * s);
 
 // RAII helper. Builds on top of yue2_store_release, nothing else.
-struct ModelHandle {
-    ModelStore * store;
+struct Yue2ModelHandle {
+    Yue2ModelStore * store;
     void *       ptr;
 
-    ModelHandle(ModelStore * s, void * p) : store(s), ptr(p) {}
+    Yue2ModelHandle(Yue2ModelStore * s, void * p) : store(s), ptr(p) {}
 
-    ~ModelHandle() {
+    ~Yue2ModelHandle() {
         if (store && ptr) {
             yue2_store_release(store, ptr);
         }
     }
 
     // non-copyable, movable
-    ModelHandle(const ModelHandle &)             = delete;
-    ModelHandle & operator=(const ModelHandle &) = delete;
+    Yue2ModelHandle(const Yue2ModelHandle &)             = delete;
+    Yue2ModelHandle & operator=(const Yue2ModelHandle &) = delete;
 
-    ModelHandle(ModelHandle && o) noexcept : store(o.store), ptr(o.ptr) {
+    Yue2ModelHandle(Yue2ModelHandle && o) noexcept : store(o.store), ptr(o.ptr) {
         o.store = nullptr;
         o.ptr   = nullptr;
     }

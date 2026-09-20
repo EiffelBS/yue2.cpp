@@ -28,7 +28,7 @@ struct Yue2Generation {
 
 // Prefill set s with a prefix, or copy the set of an equal prefix already
 // prefilled below it. The logits are the LM head rows [row0, row0 + rows).
-static void yue2_prefill(Qwen3LM *                             lm,
+static void yue2_prefill(Yue2Qwen3LM *                             lm,
                          Qw3lmKvCache *                        kv,
                          const std::vector<std::vector<int>> & prefixes,
                          int                                   first_set,
@@ -57,7 +57,7 @@ static void yue2_prefill(Qwen3LM *                             lm,
 // melody and full mode. Anything else prefills the unconditional prefixes into
 // KV sets B..2B-1 and decodes both branches in the same batched forward, the
 // conditional and unconditional logits combining before the distribution.
-static bool yue2_generate(Qwen3LM *                             lm,
+static bool yue2_generate(Yue2Qwen3LM *                             lm,
                           Qw3lmKvCache *                        kv,
                           const std::vector<std::vector<int>> & prefixes,
                           const std::vector<std::vector<int>> & negatives,

@@ -42,14 +42,14 @@
 #define YUE2_NAR_PROBE_LAYERS { 0, 7, 14, 21, 27 }
 
 struct Yue2NAR {
-    Qwen3LMConfig cfg;  // the backbone config, shared with the AR half
+    Yue2Qwen3LMConfig cfg;  // the backbone config, shared with the AR half
     bool          use_flash_attn;
     bool          clamp_fp16;
 
     int   latent_dim;
     float timestep_shift;
 
-    Qwen3Layer           layers[QW3LM_MAX_LAYERS];  // nar_* weight set
+    Yue2Qwen3Layer           layers[QW3LM_MAX_LAYERS];  // nar_* weight set
     struct ggml_tensor * final_norm;                // [H], the norm both halves end with
     struct ggml_tensor * vae2llm_w, *vae2llm_b;     // [latent_dim, H], [H]
     struct ggml_tensor * llm2vae_w, *llm2vae_b;     // [H, latent_dim], [latent_dim]
@@ -85,7 +85,7 @@ struct Yue2NAR {
 // Load the nar_* weight set of one layer, mirroring qwen3_load_layer
 static void nar_load_layer(WeightCtx *         wctx,
                            const GGUFModel &   gf,
-                           Qwen3Layer *        ly,
+                           Yue2Qwen3Layer *        ly,
                            const std::string & prefix,
                            int                 layer_idx = -1) {
     ly->input_layernorm     = gf_load_tensor_f32(wctx, gf, prefix + ".nar_input_layernorm.weight");
@@ -225,8 +225,8 @@ static struct ggml_tensor * nar_linear_bias(struct ggml_context * ctx,
 // reads. The graph only reads the cache, so there is no write to order against
 // the read and the hazard cannot exist.
 static struct ggml_tensor * nar_build_attn(struct ggml_context * ctx,
-                                           const Qwen3LMConfig & c,
-                                           Qwen3Layer *          ly,
+                                           const Yue2Qwen3LMConfig & c,
+                                           Yue2Qwen3Layer *          ly,
                                            struct ggml_tensor *  x,          // [H, N, M]
                                            struct ggml_tensor *  positions,  // [N]
                                            struct ggml_tensor *  mask,       // [ar_len + N, pad(N)] f16, all zero
@@ -310,7 +310,7 @@ static struct ggml_tensor * nar_build_attn(struct ggml_context * ctx,
 static bool nar_build_graph(Yue2NAR * n, const Qw3lmKvCache * kv, int T_lat, int M, int ar_len, int kv_set) {
     bool                  new_shape = (n->graph_T != T_lat || n->graph_ar != ar_len);
     bool                  new_key   = new_shape || n->graph_M != M || n->graph_set != kv_set;
-    const Qwen3LMConfig & c         = n->cfg;
+    const Yue2Qwen3LMConfig & c         = n->cfg;
     int                   H         = c.hidden_size;
     int                   N         = T_lat + 2;
 
@@ -374,7 +374,7 @@ static bool nar_build_graph(Yue2NAR * n, const Qw3lmKvCache * kv, int T_lat, int
 
     const int probes[] = YUE2_NAR_PROBE_LAYERS;
     for (int l = 0; l < c.n_layers; l++) {
-        Qwen3Layer *         ly   = &n->layers[l];
+        Yue2Qwen3Layer *         ly   = &n->layers[l];
         struct ggml_tensor * norm = qwen3_rms_norm(ctx, hidden, ly->input_layernorm, c.rms_norm_eps);
         struct ggml_tensor * attn = nar_build_attn(ctx, c, ly, norm, n->in_pos, n->in_mask, kv->k[kv_set][l],
                                                    kv->v[kv_set][l], ar_len, N, M, n->use_flash_attn, n->clamp_fp16);
